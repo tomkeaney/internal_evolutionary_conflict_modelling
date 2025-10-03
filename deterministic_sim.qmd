@@ -1,0 +1,491 @@
+---
+title: "Deterministic simulation of male-limited segregation distorter"
+format: html
+execute:
+  warning: false
+  message: false
+---
+
+## Load packages
+
+```{r packages}
+library(tidyverse) # for purrr, ggplot, dplyr and more 
+library(patchwork) # for combining plots
+library(rcartocolor) # for cool colours
+library(kableExtra) # scrolling tables
+library(pander) # other nice tables
+library(stickylabeller) # for labelling ggplot facets
+library(geomtextpath)
+library(ggnewscale) # for multiple scales in a single plot
+```
+
+## Introduction to the problem
+
+Here, we use recursions to investigate the invasion of an autosomal segregation distorting (SD) allele (hereafter *SD*). We denote the resident allele, which does not cause segregation distortion, *W*. We explore models where segregation distortion occurs during 1) gametogenesis and 2) is limited to sperm development, such that a proportion $k$ of the gametes produced by a heterozygote carry the *SD* allele. In both cases, the distorting effect is limited to heterozygous individuals. As commonly observed in natural systems, we assume that homozygous *SDSD* genotypes are inviable, but that there are no viability costs associated with heterozygotes.    
+
+## Build the mating table
+
+One of the more common elements of pop-gen models is the mating table. They illustrate the 'rules of the game'.
+
+Here, we use the "mating table" to list of all the possible mating types (e.g. a *WSD* mother with a *WSD* father, etc), the resulting possible offspring genotypes, and their associated frequencies. The precise values in the mating table are a function of _k_ (i.e. the strength of segregation distortion). We assume that meiosis is Mendelian except in *WSD* individuals (or just males), and that all crosses produce a 50:50 sex ratio.
+
+::: {.callout-note}
+Explore the code chunk below to see how we calculated zygote frequencies for every possible mating combination.
+:::
+
+```{r}
+make_mating_table <- function(k){
+  
+  make_offspring <- function(X, Y, type, zygote_freq){
+    tibble(mother = X,
+           father = Y,
+           type,
+           zygote_freq)
+  }
+  
+  # Set up the 18 possible mating types - this just helps to build the combinations
+  
+  mating_types <- expand_grid(
+    mother = c("WW_female",
+               "WSD",
+               "SDSD"),
+    father = c("WW",
+               "WSD",
+               "SDSD"),
+    sex_limited_drive = c("YES", "NO"))
+  
+  # Specify the possible offspring genotypes for all the potential crosses; we use these for the type argument in the make_offspring function
+  
+  # WW x WW
+  
+  g0 <- c("WW_female", "WW_male")
+  
+  # WSD x WW & WW x WSD
+  
+  g1 <- c("WW_female", "WW_male", "WSD_female", "WSD_male")
+  
+  # SDSD x WW & WW x SDSD
+  
+  g2 <- c("WSD_female", "WSD_male")
+  
+  # WSD x WSD
+  
+  g3 <- c("WW_female", "WW_male", "WSD_female", "WSD_male", "SDSD_female", "SDSD_male")
+  
+  # WSD x SDSD & SDSD x WSD
+  
+  g4 <- c("WSD_female", "WSD_male", "SDSD_female", "SDSD_male")
+  
+  # SDSD x SDSD
+  
+  g5 <- c("SDSD_female", "SDSD_male")
+  
+  
+  # Now calculate the zygote frequencies for each cross
+  
+  # even frequency of four offspring types
+  
+  rep25 <- rep(0.25, 4)
+  
+  # even frequency between two offspring types
+  
+  rep5 <- rep(0.5, 2)
+  
+  # now offspring frequencies when there's drive
+  
+  # when there are 4 offspring genotypes
+  
+  p1 <- c(0.5 * (1 - k), 
+          0.5 * (1 - k), 
+          0.5 * k, 
+          0.5 * k)
+  
+  # when there are 6 offspring genotypes
+  
+  p2 <- c(0.25 * (1 - k),
+          0.25 * (1 - k),
+          (0.25 * (1 - k)) + (0.25 * k),
+          (0.25 * (1 - k)) + (0.25 * k),
+          0.25 * k,
+          0.25 * k)
+  
+  # Now what happens when there is drive in both sexes
+  
+  # when there are 6 offspring genotypes
+  
+  p3 <- c(0.5 * ((1 - k)^2),
+          0.5 * ((1 - k)^2),
+          k*(1-k),
+          k*(1-k),
+          0.5*(k^2),
+          0.5*(k^2))
+  
+  left_join(
+    bind_rows(
+      list(
+        make_offspring("WW", "WW", g0, rep5),
+        make_offspring("WW", "WSD", g1, p1),
+        make_offspring("WW", "SDSD", g2, rep5),
+        make_offspring("WSD", "WW", g1, rep25),
+        make_offspring("WSD", "WSD", g3, p2),
+        make_offspring("WSD", "SDSD", g4, rep25),
+        make_offspring("SDSD", "WW", g2, rep5),
+        make_offspring("SDSD", "WSD", g4, p1),
+        make_offspring("SDSD", "SDSD", g5, rep5)
+      )) %>% 
+      arrange(mother, father) %>%
+      rename(zygote_freq_male_limited_drive = zygote_freq),
+    
+    
+    bind_rows(
+      list(  
+        make_offspring("WW", "WW", g0, rep5),
+        make_offspring("WW", "WSD", g1, p1),
+        make_offspring("WW", "SDSD", g2, rep5),
+        make_offspring("WSD", "WW", g1, p1),
+        make_offspring("WSD", "WSD", g3, p3),
+        make_offspring("WSD", "SDSD", g4, p1),
+        make_offspring("SDSD", "WW", g2, rep5),
+        make_offspring("SDSD", "WSD", g4, p1),
+        make_offspring("SDSD", "SDSD", g5, rep5)
+      )) %>% 
+      arrange(mother, father) %>%
+      rename(zygote_freq_heterozygote_drive = zygote_freq)
+  )
+  
+}
+
+```
+
+## An example of a mating table
+
+When $k$ = 0.9 we get
+
+```{r}
+# Make the table
+
+make_mating_table(k = 0.9) %>% 
+  rename(`zygote type` = type,
+         `zygote freq: male-limited drive` = zygote_freq_male_limited_drive,
+         `zygote freq: drive in both sexes` = zygote_freq_heterozygote_drive) %>% 
+  kable() %>% 
+  kable_styling() %>% 
+  scroll_box(height = "500px")
+
+```
+
+## Determine the mating type frequencies of the population
+
+Here we build a helper function to calculate the expected frequencies of each possible mating combination (i.e. the combination of the maternal and paternal genotypes) across the population. For singly-mated females, the frequency of each mating type is simply given by $F_iM_j$, where $F_i$ and $M_j$ are the female and male adult genotype frequencies. Note that all the fitness effects (distortion and genotype viability) are accounted for here.
+
+```{r}
+find_mating_type_frequencies <- function(pop){
+  
+  # Step 1
+  
+  pop$prop <- pop$prop * pop$egg_adult_viability # here's the selection step 
+  pop$prop <- pop$prop / sum(pop$prop) # now restandardise so that the props sum to 1
+  
+  # Step 2
+  
+  # Calculate the frequency of each single-mating combination
+  
+  mating_types <- 
+    expand_grid(mother = pop$type[str_detect(pop$type, "female")], # find all possible mother genotypes
+                father = pop$type[!str_detect(pop$type, "female")]) %>% # find all possible father genotypes
+    mutate(prop_matings = 0) # make placeholder column we will fill in below
+  
+  # find genotype frequencies calculated for each sex (mate choice means these will not necessarily be 50:50)
+  
+  female_frequencies <- pop %>% filter(str_detect(type, "female")) %>% mutate(prop = prop / sum(prop))
+  male_frequencies <- pop %>% filter(!str_detect(type, "female")) %>% mutate(prop = prop / sum(prop))
+  
+  # This next step multiplies the proportion[i] of females with genotype[i] with the proportion[i] of males with genotype[i] 
+  
+  for(i in 1:nrow(mating_types)){
+    mating_types$prop_matings[i] <- 
+      female_frequencies$prop[female_frequencies$type == mating_types$mother[i]] * 
+      male_frequencies$prop[male_frequencies$type == mating_types$father[i]]
+  }
+  
+  mating_types %>% # output
+    rename(mating_type_freq = prop_matings) %>% 
+    select(mother, father, mating_type_freq) %>%
+    # clean up the output by remving redundant info (makes it easier later)
+    mutate(mother = str_remove_all(mother, "_female"),
+           father = str_remove_all(father, "_male"))
+}
+
+```
+
+## Create a simple function to find the population-wide frequency of _SD_
+
+```{r}
+
+calc_prop_SD <- function(pop){
+  0.5 * sum(pop$prop[str_detect(pop$type, "WSD")]) + sum(pop$prop[str_detect(pop$type, "SDSD")])
+}
+```
+
+## Build the main simulation function
+
+This is how we actually run the recursions. This large function uses our two helper functions, `find_mating_type_frequencies` and `calc_prop_SD` that we build above. 
+
+::: {.callout-note}
+I wrote this code to be readable, not fast. The task is computationally quite manageable, making this an inexpensive trade-off. Functions like `left_join` should be avoided if you require faster code.
+:::
+
+```{r}
+run_recursions <- function(row, parameters, sex_limited){
+  
+  print(paste("Doing row", row)) # this tells you which row in the parameter space is being modelled
+  
+  # Get the focal parameter space out of parameters[row], this makes it easier later
+  
+  generations <- parameters$generations[row]
+  k <- parameters$k[row]
+  egg_adult_viability_WSD_female <- parameters$egg_adult_viability_WSD_female[row]
+  egg_adult_viability_SDSD_female <- parameters$egg_adult_viability_SDSD_female[row]
+  egg_adult_viability_WSD_male <- parameters$egg_adult_viability_WSD_male[row]
+  egg_adult_viability_SDSD_male <- parameters$egg_adult_viability_SDSD_male[row]
+  initial_freq_SD <- parameters$initial_freq_SD[row]
+  
+  # Make the initial population
+  pop <-
+    tibble(
+      type = c("WW_female",
+               "WSD_female",
+               "SDSD_female",
+               "WW_male",
+               "WSD_male",
+               "SDSD_male"),
+      prop = c(0.5 * (1 - initial_freq_SD) ^ 2,
+               0.5 * (1 - initial_freq_SD) * initial_freq_SD * 2,
+               0.5 * (initial_freq_SD^2),
+               0.5 * (1 - initial_freq_SD) ^ 2,
+               0.5 * (1 - initial_freq_SD) * initial_freq_SD * 2,
+               0.5 * (initial_freq_SD^2)),
+      egg_adult_viability = c(1, egg_adult_viability_WSD_female, 
+                              egg_adult_viability_SDSD_female, 1,
+                              egg_adult_viability_WSD_male, egg_adult_viability_SDSD_male)) %>%
+    arrange(type)
+  
+  # Make the mating table for this specific parameter space
+  
+  mating_table <- make_mating_table(k) # we only have to load the pre-created table once
+  
+  # Input the fitnesses of each genotype
+  
+  fitnesses <- pop %>%
+    select(type, egg_adult_viability)
+  
+  # Prepare for recursions
+  current_generation <- 1
+  keep_going <- TRUE # a quit condition, if this switches to false the sim will end
+  
+  # create a matrix to track the frequencies of SD every generation
+  # specify two columns because we'd like to know the freq in zygotes and the freq in adults
+  freq_table <- matrix(nrow = generations + 1, ncol = 2) 
+  # provide the first entry, starting with zygotes
+  freq_table[1, ] <- initial_freq_SD
+  
+  # Iterate over generations
+  
+  while(current_generation <= generations & keep_going){
+    
+    # Use our pre-made function to enact viability selection, find the mating type frequencies and renormalise the frequencies to sum to one every generation
+    
+    mating_type_frequencies <- find_mating_type_frequencies(pop = pop)
+    
+    # Now make the new pop table, using the new mating type frequencies
+    
+    if(sex_limited == TRUE){ # drive is just through males
+      pop <- 
+        left_join(mating_table, mating_type_frequencies, by = c("mother", "father")) %>%
+        # find the offspring frequencies, this is where the distortion effect is coded
+        mutate(prop = mating_type_freq * zygote_freq_male_limited_drive) %>%
+        group_by(type) %>%
+        summarise(prop = sum(prop)) %>%
+        left_join(fitnesses, by = "type")
+    } else{ # drive occurs in both sexes
+      pop <- 
+        left_join(mating_table, mating_type_frequencies, by = c("mother", "father")) %>%
+        # find the offspring frequencies, this is where the distortion effect is coded
+        mutate(prop = mating_type_freq * zygote_freq_heterozygote_drive) %>%
+        group_by(type) %>%
+        summarise(prop = sum(prop)) %>%
+        left_join(fitnesses, by = "type")
+    }
+    
+    # update the results matrix
+    # our pop matrix tracks the frequencies of zygotes, fill column one with these freqs
+    freq_table[current_generation + 1, 1] <-
+      pop %>% mutate(prop = prop/sum(prop)) %>%
+      calc_prop_SD()
+    
+    # fill column two with allele frequencies among adults
+    freq_table[current_generation + 1, 2] <-
+      pop %>% mutate(prop = prop*egg_adult_viability) %>% mutate(prop = prop/sum(prop)) %>%
+      calc_prop_SD()
+    
+    # Calculate the frequency of SD
+    prop_SD <- calc_prop_SD(pop)
+    # Quit early if SD fixes or goes extinct-ish
+    if(prop_SD > 0.99 | prop_SD < 0.005) keep_going <- FALSE
+    
+    # Increment the generation counter by 1 and return to top of the 'while' loop
+    current_generation <- current_generation + 1
+  }
+  
+  freq_table # returns the final pop
+  
+}
+```
+
+# Build parameter space
+
+```{r}
+parameters <- rbind(
+  expand_grid(
+    generations = 1000,
+    k = seq(from = 0.5, to = 1, by = 0.005),
+    egg_adult_viability_WSD_female = 1,
+    egg_adult_viability_SDSD_female = 0,
+    egg_adult_viability_WSD_male = 1,
+    egg_adult_viability_SDSD_male = 0,
+    initial_freq_SD = 0.01)) %>% 
+  mutate(parameter_space_ID = row_number())
+```
+
+## Run the simulation
+
+```{r}
+if(!file.exists("simulation_results/sex_lim_results.rds")){
+sex_lim_results <- 
+  lapply(1:nrow(parameters), run_recursions, parameters = parameters, sex_limited = TRUE)
+
+saveRDS(sex_lim_results, "simulation_results/sex_lim_results.rds")
+
+both_sexes_results <- 
+  lapply(1:nrow(parameters), run_recursions, parameters = parameters, sex_limited = FALSE)
+
+saveRDS(both_sexes_results, "simulation_results/both_sexes_results.rds")
+}else{
+  sex_lim_results <- read_rds("simulation_results/sex_lim_results.rds")
+  both_sexes_results <- read_rds("simulation_results/both_sexes_results.rds")
+}
+
+```
+
+## Wrangle the results for plotting
+
+Get the results from a single run
+
+```{r}
+single_run_sex_lim <- 
+  sex_lim_results[[81]] %>% 
+  as_tibble() %>% 
+  rename(Zygotes = V1,
+         Adults = V2) %>% 
+  mutate(gen = 1:n(),
+         drive = "Male-limited drive")
+
+single_run_all_het <- 
+  both_sexes_results[[81]] %>% 
+  as_tibble() %>% 
+  rename(Zygotes = V1,
+         Adults = V2) %>% 
+  mutate(gen = 1:n(),
+         drive = "Drive in all heterozygotes")
+
+single_run <-
+  rbind(single_run_sex_lim,
+        single_run_all_het) %>% 
+  pivot_longer(cols = 1:2, names_to = "Census point", values_to = "Frequency")
+```
+
+Get the endpoints of all simulations
+
+```{r}
+
+results_wrangler <- 
+  function(input, row){
+    as.data.frame(input[row]) %>% 
+      filter(!is.na(X1)) %>% 
+      slice_tail(n = 1) %>% 
+      mutate(parameter_space_ID = row,
+             X1 = round(X1, 3),
+             X2 = round(X2, 3))
+  }
+
+sex_lim_tidy_results <- 
+  map_dfr(1:nrow(parameters),
+          results_wrangler,
+          input = sex_lim_results) %>% 
+  rename(Zygotes = X1,
+         Adults = X2) %>%
+  mutate(drive = "Male-limited drive") %>% 
+  left_join(parameters, by = "parameter_space_ID")
+
+both_sexes_tidy_results <- 
+  map_dfr(1:nrow(parameters),
+          results_wrangler,
+          input = both_sexes_results) %>% 
+  rename(Zygotes = X1,
+         Adults = X2) %>% 
+  mutate(drive = "Drive in all heterozygotes") %>% 
+  left_join(parameters, by = "parameter_space_ID")
+
+complete_results <-
+  bind_rows(sex_lim_tidy_results,
+            both_sexes_tidy_results) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols = Zygotes:Adults, 
+               names_to = "Census point",
+                values_to = "Prop. driver")
+
+```
+
+## Plot the results
+
+First, let's plot the evolutionary trajectory of the *SD* allele when $k=0.9$.
+
+```{r}
+single_run %>% 
+  ggplot(aes(x = gen, y = Frequency, group = `Census point`)) +
+  geom_textline(aes(label = `Census point`), hjust = 0.75) +
+  labs(x = "Generations",
+       y = "Equilibrium freq. of driving allele") +
+  facet_wrap(~drive) +
+  scale_x_continuous(expand = c(0, 0.01), limits = c(0,100)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  theme_bw() +
+  theme(text = element_text(size = 16),
+        strip.background = element_rect(colour = "black",
+                                        fill = "Aliceblue",
+                                        size = .8),
+        panel.spacing.x = unit(10, "mm"))
+```
+
+Now let's plot the equilibrium frequency for all values of $k$
+
+```{r}
+
+complete_results %>% 
+  ggplot(aes(x = k, y = `Prop. driver`, group = `Census point`)) +
+  geom_textline(aes(label = `Census point`)) +
+  #geom_line(data = Bruck_results, colour = "orange") +
+  labs(x = "Strength of drive (k)",
+       y = "Equilibrium freq. of driving allele") +
+  facet_wrap(~drive) +
+  scale_x_continuous(expand = c(0, 0.01)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1)) +
+  theme_bw() +
+  theme(text = element_text(size = 16),
+        strip.background = element_rect(colour = "black",
+                                        fill = "Aliceblue",
+                                        size = .8),
+        panel.spacing.x = unit(10, "mm"))
+
+```
+
