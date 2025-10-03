@@ -13,7 +13,7 @@ website:
       - icon: github
         menu:
           - text: Source Code
-            url:  XXX
+            url:  https://github.com/tomkeaney/internal_evolutionary_conflict_modelling
 format:
   html:
       theme: Litera # browse these here: https://quarto.org/docs/output-formats/html-themes.html
