@@ -455,7 +455,7 @@ single_run %>%
   ggplot(aes(x = gen, y = Frequency, group = `Census point`)) +
   geom_textline(aes(label = `Census point`), hjust = 0.75) +
   labs(x = "Generations",
-       y = "Equilibrium freq. of driving allele") +
+       y = "Freq. of driving allele") +
   facet_wrap(~drive) +
   scale_x_continuous(expand = c(0, 0.01), limits = c(0,100)) +
   scale_y_continuous(expand = c(0, 0), limits = c(0, 1)) +
